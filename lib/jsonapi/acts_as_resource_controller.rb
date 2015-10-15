@@ -94,9 +94,13 @@ module JSONAPI
     end
 
     def setup_response
-      if response.body.size > 0
-        response.headers['Content-Type'] = JSONAPI::MEDIA_TYPE
-      end
+      response.headers['Content-Type'] = JSONAPI::MEDIA_TYPE
+      # This check causes the response to start sending which will raise an error
+      # in https://github.com/rails/rails/blob/master/actionpack/lib/action_dispatch/http/response.rb#L43
+      # For now we don't check. Empty responses will be problematic, but wouldn't they always be?
+      # if response.body.size > 0
+      #   response.headers['Content-Type'] = JSONAPI::MEDIA_TYPE
+      # end
     end
 
     # override to set context
