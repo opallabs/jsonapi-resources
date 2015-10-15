@@ -391,6 +391,15 @@ end
 class BookComment < ActiveRecord::Base
   belongs_to :author, class_name: 'Person', foreign_key: 'author_id'
   belongs_to :book
+
+  def self.for_user(current_user)
+    records = self
+    # Hide the unapproved comments from people who are not book admins
+    unless current_user && current_user.book_admin
+      records = records.where(approved: true)
+    end
+    records
+  end
 end
 
 class BreedData
@@ -916,6 +925,10 @@ class PlanetResource < JSONAPI::Resource
   has_one :planet_type
 
   has_many :tags, acts_as_set: true
+
+  def records_for_moons
+    Moon.joins(:craters).select('moons.*, craters.code').distinct
+  end
 end
 
 class PropertyResource < JSONAPI::Resource
@@ -955,7 +968,7 @@ class PreferencesResource < JSONAPI::Resource
   has_many :friends
 
   def self.find_by_key(key, options = {})
-    new(Preferences.first)
+    new(Preferences.first, nil)
   end
 end
 
@@ -1146,15 +1159,8 @@ module Api
         end
 
         def records(options = {})
-          context = options[:context]
-          current_user = context ? context[:current_user] : nil
-
-          records = _model_class
-          # Hide the unapproved comments from people who are not book admins
-          unless current_user && current_user.book_admin
-            records = records.where(approved_comments)
-          end
-          records
+          current_user = options[:context][:current_user]
+          _model_class.for_user(current_user)
         end
       end
     end

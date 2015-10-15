@@ -31,6 +31,7 @@ backed by ActiveRecord models or by custom objects.
     * [Namespaces] (#namespaces)
     * [Error Codes] (#error-codes)
     * [Handling Exceptions] (#handling-exceptions)
+    * [Action Callbacks] (#action-callbacks)
   * [Serializer] (#serializer)
 * [Configuration] (#configuration)
 * [Contributing] (#contributing)
@@ -497,12 +498,12 @@ class PostResource < JSONAPI::Resource
 
   # def record_for_author
   #   relation_name = relationship.relation_name(context: @context)
-  #   records_for(relation_name, context: @context)
+  #   records_for(relation_name)
   # end
 
   # def records_for_comments
   #   relation_name = relationship.relation_name(context: @context)
-  #   records_for(relation_name, context: @context)
+  #   records_for(relation_name)
   # end
 end
 
@@ -513,7 +514,7 @@ section for additional details on raising errors.
 
 ```ruby
 class BaseResource < JSONAPI::Resource
-  def records_for(relation_name, options={})
+  def records_for(relation_name)
     context = options[:context]
     records = model.public_send(relation_name)
 
@@ -609,7 +610,7 @@ class AuthorResource < JSONAPI::Resource
     authors = context[:current_user].find_authors(filters)
 
     return authors.map do |author|
-      self.new(author)
+      self.new(author, context)
     end
   end
 end
@@ -665,7 +666,7 @@ The default paginator, which will be used for all resources, is set using `JSONA
 
 ```ruby
 JSONAPI.configure do |config|
-  # built in paginators are :none, :offset, :cursor, :paged
+  # built in paginators are :none, :offset, :paged
   config.default_paginator = :offset
 
   config.default_page_size = 10
@@ -748,8 +749,6 @@ Will get you the following payload by default:
 }
 ```
 
-You can also pass an `include` option to [Serializer#serialize_to_hash](#include) if you want to define this inline.
-
 #### Callbacks
 
 `ActiveSupport::Callbacks` is used to provide callback functionality, so the behavior is very similar to what you may be
@@ -780,12 +779,12 @@ Callbacks can be defined for the following `JSONAPI::Resource` events:
 - `:update`
 - `:remove`
 - `:save`
-- `:create_has_many_link`
-- `:replace_has_many_links`
-- `:create_has_one_link`
-- `:replace_has_one_link`
-- `:remove_has_many_link`
-- `:remove_has_one_link`
+- `:create_to_many_link`
+- `:replace_to_many_links`
+- `:create_to_one_link`
+- `:replace_to_one_link`
+- `:remove_to_many_link`
+- `:remove_to_one_link`
 - `:replace_fields`
 
 ##### `JSONAPI::OperationsProcessor` Callbacks
@@ -801,11 +800,11 @@ Callbacks can also be defined for `JSONAPI::OperationsProcessor` events:
 - `:create_resource_operation`: A `create_resource_operation`.
 - `:remove_resource_operation`: A `remove_resource_operation`.
 - `:replace_fields_operation`: A `replace_fields_operation`.
-- `:replace_has_one_relationship_operation`: A `replace_has_one_relationship_operation`.
-- `:create_has_many_relationship_operation`: A `create_has_many_relationship_operation`.
-- `:replace_has_many_relationship_operation`: A `replace_has_many_relationship_operation`.
-- `:remove_has_many_relationship_operation`: A `remove_has_many_relationship_operation`.
-- `:remove_has_one_relationship_operation`: A `remove_has_one_relationship_operation`.
+- `:replace_to_one_relationship_operation`: A `replace_to_one_relationship_operation`.
+- `:create_to_many_relationship_operation`: A `create_to_many_relationship_operation`.
+- `:replace_to_many_relationship_operation`: A `replace_to_many_relationship_operation`.
+- `:remove_to_many_relationship_operation`: A `remove_to_many_relationship_operation`.
+- `:remove_to_one_relationship_operation`: A `remove_to_one_relationship_operation`.
 
 The operation callbacks have access to two meta data hashes, `@operations_meta` and `@operation_meta`, two links hashes,
 `@operations_links` and `@operation_links`, the full list of `@operations`, each individual `@operation` and the
@@ -820,6 +819,7 @@ To return the total record count of a find operation in the meta data of a find 
 OperationsProcessor. For example:
 
 ```ruby
+# lib/jsonapi/counting_active_record_operations_processor.rb
 class CountingActiveRecordOperationsProcessor < ActiveRecordOperationsProcessor
   after_find_operation do
     @operation_meta[:total_records] = @operation.record_count
@@ -831,6 +831,8 @@ Set the configuration option `operations_processor` to use the new `CountingActi
 specifying the snake cased name of the class (without the `OperationsProcessor`).
 
 ```ruby
+require 'jsonapi/counting_active_record_operations_processor'
+
 JSONAPI.configure do |config|
   config.operations_processor = :counting_active_record
 end
@@ -1055,6 +1057,26 @@ Pass a block, refer to controller class methods, or both. Note that methods must
 
 ```
 
+#### Action Callbacks
+
+##### ensure_correct_media_type
+
+By default, when controllers extend functionalities from `jsonapi-resources`, the `ActsAsResourceController#ensure_correct_media_type`
+method will be triggered before `create`, `update`, `create_relationship` and `update_relationship` actions. This method is reponsible
+for checking if client's request corresponds to the correct media type required by [JSON API](http://jsonapi.org/format/#content-negotiation-clients): `application/vnd.api+json`.
+
+In case you need to check the media type for custom actions, just make sure to call the method in your controller's `before_action`:
+
+```ruby
+class UsersController < JSONAPI::ResourceController
+  before_action :ensure_correct_media_type, only: [:auth]
+
+  def auth
+    # some crazy auth code goes here
+  end
+end
+```
+
 ### Serializer
 
 The `ResourceSerializer` can be used to serialize a resource into JSON API compliant JSON. `ResourceSerializer` must be
@@ -1063,7 +1085,7 @@ The `ResourceSerializer` can be used to serialize a resource into JSON API compl
 
 ```ruby
 post = Post.find(1)
-JSONAPI::ResourceSerializer.new(PostResource).serialize_to_hash(PostResource.new(post))
+JSONAPI::ResourceSerializer.new(PostResource).serialize_to_hash(PostResource.new(post, nil))
 ```
 
 This returns results like this:
@@ -1116,9 +1138,9 @@ This returns results like this:
 }
 ```
 
-#### serialize_to_hash method options
+#### Serializer options
 
-The `serialize_to_hash` method also takes some optional parameters:
+The `ResourceSerializer` can be initialized with some optional parameters:
 
 ##### `include`
 
@@ -1148,12 +1170,8 @@ JSONAPI::ResourceSerializer.new(PostResource, include: include_resources,
     tags: [:name],
     comments: [:body, :post]
   }
-).serialize_to_hash(PostResource.new(post))
+).serialize_to_hash(PostResource.new(post, nil))
 ```
-
-##### `context`
-
-Context data can be provided to the serializer, which passes it to each resource as it is inspected.
 
 #### Routing
 
@@ -1478,6 +1496,9 @@ You would specify this in `JSONAPI.configure` as `:upper_camelized`.
 JR has a few configuration options. Some have already been mentioned above. To set configuration options create an
 initializer and add the options you wish to set. All options have defaults, so you only need to set the options that
 are different. The default options are shown below.
+
+If using custom classes (such as the CountingActiveRecordOperationsProcessor, or a CustomPaginator),
+be sure to require them at the top of the initializer before usage.
 
 ```ruby
 JSONAPI.configure do |config|

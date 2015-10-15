@@ -2845,6 +2845,54 @@ class Api::V2::BooksControllerTest < ActionController::TestCase
     assert_response :success
     assert_equal 2, json_response['data'].size
   end
+
+  def test_books_create_unapproved_comment_limited_user_using_relation_name
+    set_content_type_header!
+    $test_user = Person.find(1)
+
+    book_comment = BookComment.create(body: 'Not Approved dummy comment', approved: false)
+    post :create_relationship, {book_id: 1, relationship: 'book_comments', data: [{type: 'book_comments', id: book_comment.id}]}
+
+    # Note the not_found response is coming from the BookComment's overridden records method, not the relation
+    assert_response :not_found
+
+  ensure
+    book_comment.delete
+  end
+
+  def test_books_create_approved_comment_limited_user_using_relation_name
+    set_content_type_header!
+    $test_user = Person.find(1)
+
+    book_comment = BookComment.create(body: 'Approved dummy comment', approved: true)
+    post :create_relationship, {book_id: 1, relationship: 'book_comments', data: [{type: 'book_comments', id: book_comment.id}]}
+    assert_response :success
+
+  ensure
+    book_comment.delete
+  end
+
+  def test_books_delete_unapproved_comment_limited_user_using_relation_name
+    $test_user = Person.find(1)
+
+    book_comment = BookComment.create(book_id: 1, body: 'Not Approved dummy comment', approved: false)
+    delete :destroy_relationship, {book_id: 1, relationship: 'book_comments', data: [{type: 'book_comments', id: book_comment.id}]}
+    assert_response :not_found
+
+  ensure
+    book_comment.delete
+  end
+
+  def test_books_delete_approved_comment_limited_user_using_relation_name
+    $test_user = Person.find(1)
+
+    book_comment = BookComment.create(book_id: 1, body: 'Approved dummy comment', approved: true)
+    delete :destroy_relationship, {book_id: 1, relationship: 'book_comments', data: [{type: 'book_comments', id: book_comment.id}]}
+    assert_response :no_content
+
+  ensure
+    book_comment.delete
+  end
 end
 
 class Api::V2::BookCommentsControllerTest < ActionController::TestCase
@@ -2988,6 +3036,18 @@ class Api::V1::MoonsControllerTest < ActionController::TestCase
                                   }
                                 }
 
+   end
+
+   def test_get_related_resources_with_select_some_db_columns
+     PlanetResource.paginator :paged
+     original_config = JSONAPI.configuration.dup
+     JSONAPI.configuration.top_level_meta_include_record_count = true
+     JSONAPI.configuration.json_key_format = :dasherized_key
+     get :get_related_resources, {planet_id: '1', relationship: 'moons', source: 'api/v1/planets'}
+     assert_response :success
+     assert_equal 1, json_response['meta']['record-count']
+   ensure
+     JSONAPI.configuration = original_config
    end
 end
 
