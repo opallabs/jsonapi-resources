@@ -15,6 +15,7 @@ module JSONAPI
     attr_reader :url_generator
 
     def initialize(primary_resource_klass, options = {})
+      @skip_url = options[:skip_url]
       @primary_class_name = primary_resource_klass._type
       @fields             = options.fetch(:fields, {})
       @include            = options.fetch(:include, [])
@@ -110,9 +111,8 @@ module JSONAPI
 
       obj_hash['type'] = format_key(source.class._type.to_s)
 
-      links = relationship_links(source)
-      obj_hash['links'] = links unless links.empty?
-
+      links = relationship_links(source) unless @skip_url
+      obj_hash['links'] = links unless links.nil?
       attributes = attribute_hash(source)
       obj_hash['attributes'] = attributes unless attributes.empty?
 

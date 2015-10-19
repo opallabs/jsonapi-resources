@@ -79,6 +79,8 @@ module JSONAPI
 
     def ensure_correct_media_type
       unless request.content_type == JSONAPI::MEDIA_TYPE
+        puts JSONAPI::MEDIA_TYPE
+        puts request.content_type
         fail JSONAPI::Exceptions::UnsupportedMediaTypeError.new(request.content_type)
       end
     rescue => e
